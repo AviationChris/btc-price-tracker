@@ -1,31 +1,46 @@
-import os
 import requests
-from dotenv import load_dotenv
+from api_config import API_URL
+from logger_config import setup_logger
+import logging
+from typing import Dict, Optional
 
-load_dotenv()
+logger = setup_logger('btc_price')
 
-def get_btc_price():
-    api_key = os.getenv('CMC_API_KEY')
-    if not api_key:
-        raise ValueError('CMC_API_KEY not found in environment variables')
+class BTCPriceError(Exception):
+    """Custom exception for BTC price fetching errors"""
+    pass
 
-    url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest'
-    headers = {
-        'X-CMC_PRO_API_KEY': api_key
-    }
-    params = {
-        'symbol': 'BTC',
-        'convert': 'USD'
-    }
-
+def get_btc_price() -> Optional[Dict]:
+    """
+    Fetch current BTC price from CoinGecko API
+    
+    Returns:
+        dict: Bitcoin price data if successful
+        None: If request fails
+        
+    Raises:
+        BTCPriceError: If there's an error fetching or parsing the data
+    """
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(API_URL)
         response.raise_for_status()
+        
         data = response.json()
-        price = data['data']['BTC']['quote']['USD']['price']
-        return f'Current Bitcoin Price: ${price:,.2f}'
-    except requests.exceptions.RequestException as e:
-        return f'Error fetching price: {str(e)}'
+        logger.info("Successfully fetched BTC price data")
+        return data
+        
+    except requests.RequestException as e:
+        logger.error(f"Error fetching BTC price: {str(e)}")
+        raise BTCPriceError(f"Failed to fetch BTC price: {str(e)}")
+        
+    except ValueError as e:
+        logger.error(f"Error parsing response data: {str(e)}")
+        raise BTCPriceError(f"Failed to parse BTC price data: {str(e)}")
 
-if __name__ == '__main__':
-    print(get_btc_price())
+if __name__ == "__main__":
+    try:
+        price_data = get_btc_price()
+        print(f"Current BTC Price: ${price_data['bitcoin']['usd']:,.2f}")
+    except BTCPriceError as e:
+        logger.error(f"Main execution failed: {str(e)}")
+        print(f"Error: {str(e)}")
