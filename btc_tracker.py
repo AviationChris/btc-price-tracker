@@ -1,43 +1,53 @@
-import requests
 import time
-from datetime import datetime
-from api_config import API_KEY
+from btc_price import get_btc_price, BTCPriceError
+from database import BTCDatabase
+from analysis import PriceAnalyzer
+from config import Config
+from logger_config import setup_logger
 
-def get_btc_prices():
-    url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest'
-    parameters = {
-        'symbol': 'BTC',
-        'convert': 'USD,AUD'
-    }
-    headers = {
-        'Accepts': 'application/json',
-        'X-CMC_PRO_API_KEY': API_KEY
-    }
+logger = setup_logger('btc_tracker')
 
-    try:
-        response = requests.get(url, headers=headers, params=parameters)
-        response.raise_for_status()
-        data = response.json()
-        usd_price = data['data']['BTC']['quote']['USD']['price']
-        aud_price = data['data']['BTC']['quote']['AUD']['price']
-        return usd_price, aud_price
-    except requests.exceptions.RequestException as e:
-        print(f'Error fetching price: {e}')
-        return None, None
+class BTCTracker:
+    def __init__(self):
+        self.db = BTCDatabase()
+        self.analyzer = PriceAnalyzer(self.db)
+        self.config = Config()
 
-def main():
-    print('Bitcoin Price Tracker Started')
-    print('Press Ctrl+C to exit')
-    
-    try:
+    def track_price(self):
+        try:
+            data = get_btc_price()
+            if not data or 'bitcoin' not in data:
+                raise BTCPriceError("Invalid price data format")
+
+            price = data['bitcoin']['usd']
+            self.db.add_price(price)
+            
+            metrics = self.analyzer.calculate_metrics()
+            if metrics:
+                logger.info(f"Price: ${price:,.2f} | 24h Avg: ${metrics['average_24h']:,.2f}")
+                
+                if self.analyzer.detect_significant_changes():
+                    logger.warning(f"Significant price change detected! Current: ${price:,.2f}")
+            
+            return price
+            
+        except BTCPriceError as e:
+            logger.error(f"Error tracking price: {str(e)}")
+            return None
+
+    def run(self):
+        logger.info("Starting BTC price tracker...")
         while True:
-            usd_price, aud_price = get_btc_prices()
-            if usd_price and aud_price:
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f'[{timestamp}] BTC: ${usd_price:,.2f} USD | ${aud_price:,.2f} AUD')
-            time.sleep(60)  # Update every minute
-    except KeyboardInterrupt:
-        print('\nTracker stopped')
+            try:
+                self.track_price()
+                time.sleep(self.config.UPDATE_INTERVAL)
+            except KeyboardInterrupt:
+                logger.info("Stopping BTC price tracker...")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+                time.sleep(self.config.UPDATE_INTERVAL)
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    tracker = BTCTracker()
+    tracker.run()
