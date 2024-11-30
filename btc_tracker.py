@@ -3,11 +3,11 @@ import time
 from datetime import datetime
 from api_config import API_KEY
 
-def get_btc_price():
+def get_btc_prices():
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest'
     parameters = {
         'symbol': 'BTC',
-        'convert': 'USD'
+        'convert': 'USD,AUD'
     }
     headers = {
         'Accepts': 'application/json',
@@ -18,11 +18,12 @@ def get_btc_price():
         response = requests.get(url, headers=headers, params=parameters)
         response.raise_for_status()
         data = response.json()
-        price = data['data']['BTC']['quote']['USD']['price']
-        return price
+        usd_price = data['data']['BTC']['quote']['USD']['price']
+        aud_price = data['data']['BTC']['quote']['AUD']['price']
+        return usd_price, aud_price
     except requests.exceptions.RequestException as e:
         print(f'Error fetching price: {e}')
-        return None
+        return None, None
 
 def main():
     print('Bitcoin Price Tracker Started')
@@ -30,10 +31,10 @@ def main():
     
     try:
         while True:
-            price = get_btc_price()
-            if price:
+            usd_price, aud_price = get_btc_prices()
+            if usd_price and aud_price:
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f'[{timestamp}] BTC: ${price:,.2f}')
+                print(f'[{timestamp}] BTC: ${usd_price:,.2f} USD | ${aud_price:,.2f} AUD')
             time.sleep(60)  # Update every minute
     except KeyboardInterrupt:
         print('\nTracker stopped')
